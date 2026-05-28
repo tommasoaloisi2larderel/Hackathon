@@ -1,0 +1,11 @@
+data/RES2-6-9.csv
+data/df_clean.parquet
+data/pivot.parquet
+*.parquet
+*.csv
+!data/labels.csv
+venv/
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
