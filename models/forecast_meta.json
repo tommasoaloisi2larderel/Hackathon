@@ -1,0 +1,10 @@
+{
+  "client_id": "1704875583",
+  "label": "RP",
+  "window_days": 7,
+  "mae": 0.1908075850270875,
+  "rmse": 0.304527504427616,
+  "mae_baseline": 0.29636938537123847,
+  "rmse_baseline": 0.42988516237203106,
+  "evaluation_scope": "single representative client; extend to a panel for final presentation"
+}
