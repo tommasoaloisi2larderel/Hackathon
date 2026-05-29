@@ -1,9 +1,10 @@
 data/RES2-6-9.csv
-data/df_clean.parquet
-data/pivot.parquet
 *.parquet
 *.csv
 !data/labels.csv
+!data/df_clean.parquet
+!data/pivot.parquet
+!data/features.parquet
 venv/
 .venv/
 __pycache__/
