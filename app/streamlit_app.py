@@ -43,10 +43,10 @@ WINDOW   = 7
 
 # ── Model definitions (must match notebooks) ──────────────────────────────────
 class LSTMForecaster(nn.Module):
-    def __init__(self, input_size=48, hidden_size=64, num_layers=2, output_size=48):
+    def __init__(self, input_size=48, hidden_size=64, num_layers=2, output_size=48, dropout=0.2):
         super().__init__()
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers,
-                            batch_first=True, dropout=0.2)
+                            batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
@@ -96,7 +96,10 @@ def load_classifier():
 def load_lstm():
     with open(MODELS / "forecast_meta.json") as f:
         meta = json.load(f)
-    model = LSTMForecaster()
+    hidden_size = meta.get("hidden_size", 64)
+    num_layers = meta.get("num_layers", 2)
+    dropout = meta.get("dropout", 0.2)
+    model = LSTMForecaster(hidden_size=hidden_size, num_layers=num_layers, dropout=dropout)
     model.load_state_dict(torch.load(MODELS / "lstm_forecaster.pt", map_location="cpu"))
     model.eval()
     scaler = joblib.load(MODELS / "scaler_ts.pkl")
