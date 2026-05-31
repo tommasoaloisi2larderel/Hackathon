@@ -2,12 +2,9 @@
   "client_id": "1704875583",
   "label": "RP",
   "window_days": 7,
-  "hidden_size": 128,
-  "num_layers": 2,
-  "dropout": 0.3,
-  "mae": 0.1910217299818542,
-  "rmse": 0.30186174771876084,
-  "mae_baseline": 0.29636938537123847,
-  "rmse_baseline": 0.42988516237203106,
+  "mae": 0.18703630226755774,
+  "rmse": 0.3025187243170013,
+  "mae_baseline": 0.2963693853712383,
+  "rmse_baseline": 0.42988516237203084,
   "evaluation_scope": "single representative client; extend to a panel for final presentation"
 }
