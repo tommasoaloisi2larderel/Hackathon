@@ -16,6 +16,9 @@ from sklearn.metrics import (
     mean_absolute_error,
 )
 from scipy.stats import ks_2samp
+from sklearn.decomposition import PCA
+import plotly.graph_objects as go
+
 
 warnings.filterwarnings("ignore")
 
@@ -109,6 +112,17 @@ def load_vae():
     return vae, scaler
 
 
+@st.cache_data
+def get_pca_3d(_features):
+    scaler = joblib.load(MODELS / "scaler_features.pkl")
+    with open(MODELS / "feature_cols.json") as f:
+        feature_cols = json.load(f)
+    X_scaled = scaler.transform(_features[feature_cols])
+    pca3 = PCA(n_components=3)
+    X_3d = pca3.fit_transform(X_scaled)
+    return X_3d, pca3.explained_variance_ratio_
+
+
 # ── Feature engineering — must match what classifier was trained on ────────────
 def compute_features(serie: pd.Series) -> pd.DataFrame:
     """Toutes les features calculées à l'entraînement (feature_cols.json est la source de vérité)."""
@@ -198,7 +212,7 @@ st.sidebar.title("Enedis · Analyse")
 st.sidebar.caption("Courbes de charge résidentielles")
 page = st.sidebar.radio(
     "Page",
-    ["🔍 Classification", "📈 Prévision", "✨ Génération"],
+    ["🔍 Classification", "📊 Clustering 3D", "📈 Prévision", "✨ Génération"],
     label_visibility="collapsed",
 )
 
@@ -287,7 +301,6 @@ if page == "🔍 Classification":
                 display_labels=["RP", "RS"]
             ).plot(ax=ax_cm, colorbar=False)
             ax_cm.set_title("Matrice de confusion")
-            plt.tight_layout()
             st.pyplot(fig_cm)
             plt.close()
         with col_report:
@@ -295,7 +308,127 @@ if page == "🔍 Classification":
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# PAGE 2 — PRÉVISION
+# PAGE 2 — CLUSTERING 3D
+# ═════════════════════════════════════════════════════════════════════════════
+elif page == "📊 Clustering 3D":
+    st.title("Visualisation 3D du Clustering — PCA")
+    st.write(
+        "Cette page affiche les 500 clients projetés dans l'espace 3D des trois premières "
+        "composantes principales (PCA), calculées à partir des 23 indicateurs de consommation. "
+        "Vous pouvez explorer l'espace de manière interactive, changer la coloration des points "
+        "et mettre en évidence un client particulier."
+    )
+    
+    st.divider()
+
+    left_col, right_col = st.columns([1, 2], gap="large")
+
+    with left_col:
+        st.subheader("Options d'affichage")
+        color_by = st.radio(
+            "Colorer les points par :",
+            ["Clusters K-means (k=3)", "Labels finaux (RS/RP)"]
+        )
+        
+        highlight_client = st.selectbox(
+            "Mettre en évidence un client :",
+            [None] + all_ids,
+            format_func=lambda x: "Aucun" if x is None else f"ID {x}"
+        )
+        
+        st.divider()
+        
+        if highlight_client is not None:
+            st.subheader(f"Détails Client {highlight_client}")
+            c_feat = features.loc[highlight_client]
+            
+            # Map cluster to sub-label if coloring by K-means
+            cluster_name = {0: "RS (Résidence Secondaire)", 2: "RP1 (Résidence Principale 1)", 1: "RP2 (Résidence Principale 2)"}[int(c_feat['cluster'])]
+            
+            st.markdown(f"**Classe K-means :** {cluster_name}")
+            st.markdown(f"**Label Final :** {c_feat['label']}")
+            
+            m1, m2 = st.columns(2)
+            m1.metric("Conso Totale", f"{c_feat['conso_totale']:.1f} kWh")
+            m2.metric("Pic Max", f"{c_feat['pic_max']:.2f} kW")
+            
+            m3, m4 = st.columns(2)
+            m3.metric("Jours Actifs", f"{int(c_feat['nb_jours_actifs'])} j")
+            m4.metric("Jours Quasi Nuls", f"{int(c_feat['nb_jours_quasi_nuls'])} j")
+            
+            st.metric("Log Ratio Été/Hiver", f"{c_feat['log_ratio_ete_hiver']:.3f}", 
+                      help="Valeur positive = consomme plus en été (typique RS). Valeur négative = consomme plus en hiver (typique RP).")
+        else:
+            st.info("Sélectionnez un client ci-dessus pour afficher ses caractéristiques et le localiser dans l'espace 3D.")
+
+    with right_col:
+        X_3d, explained_variance_ratio = get_pca_3d(features)
+        
+        # Color configuration
+        if color_by == "Clusters K-means (k=3)":
+            labels = features['cluster'].map({0: 'RS', 2: 'RP1', 1: 'RP2'})
+            colors = {'RS': 'tomato', 'RP1': 'steelblue', 'RP2': 'mediumseagreen'}
+        else:
+            labels = features['label']
+            colors = {'RS': 'tomato', 'RP': 'steelblue'}
+            
+        fig = go.Figure()
+        
+        # Add a trace for each class
+        for label, color in colors.items():
+            mask = labels == label
+            fig.add_trace(go.Scatter3d(
+                x=X_3d[mask, 0],
+                y=X_3d[mask, 1],
+                z=X_3d[mask, 2],
+                mode='markers',
+                name=label,
+                marker=dict(color=color, size=5, opacity=0.65, line=dict(color='white', width=0.5)),
+                hovertext=[
+                    f"Client ID: {cid}<br>Conso totale: {features.loc[cid, 'conso_totale']:.1f} kWh<br>Jours actifs: {int(features.loc[cid, 'nb_jours_actifs'])}"
+                    for cid in features[mask].index
+                ],
+                hoverinfo='text'
+            ))
+            
+        # Highlight selected client
+        if highlight_client is not None:
+            client_idx = features.index.get_loc(highlight_client)
+            x_c, y_c, z_c = X_3d[client_idx]
+            c_label = labels.iloc[client_idx]
+            fig.add_trace(go.Scatter3d(
+                x=[x_c], y=[y_c], z=[z_c],
+                mode='markers+text',
+                name=f"Cible: {highlight_client}",
+                marker=dict(color='gold', size=12, symbol='diamond', line=dict(color='black', width=2)),
+                text=[f"Client {highlight_client}"],
+                textposition="top center",
+                hovertext=[
+                    f"<b>CIBLE : Client ID {highlight_client}</b><br>Classe: {c_label}<br>Conso totale: {features.loc[highlight_client, 'conso_totale']:.1f} kWh"
+                ],
+                hoverinfo='text'
+            ))
+            
+        fig.update_layout(
+            title=dict(text="Projection PCA 3D des clients", x=0.5, y=0.95),
+            scene=dict(
+                xaxis_title=f"PC1 ({explained_variance_ratio[0]:.1%})",
+                yaxis_title=f"PC2 ({explained_variance_ratio[1]:.1%})",
+                zaxis_title=f"PC3 ({explained_variance_ratio[2]:.1%})",
+                xaxis=dict(backgroundcolor="rgb(240, 242, 246)", gridcolor="white", showbackground=True, zerolinecolor="white"),
+                yaxis=dict(backgroundcolor="rgb(240, 242, 246)", gridcolor="white", showbackground=True, zerolinecolor="white"),
+                zaxis=dict(backgroundcolor="rgb(240, 242, 246)", gridcolor="white", showbackground=True, zerolinecolor="white"),
+            ),
+            width=850, height=650,
+            margin=dict(l=0, r=0, b=0, t=30),
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PAGE 3 — PRÉVISION
 # ═════════════════════════════════════════════════════════════════════════════
 elif page == "📈 Prévision":
     st.title("Prévision J+1 — LSTM")
